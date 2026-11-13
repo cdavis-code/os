@@ -86,6 +86,12 @@ pipeline:
     with:
       dir: src
 
+  # Exercise actual RPC/ASN.1 implementations with finite synthetic inputs.
+  # Kept after install so allocator instrumentation cannot enter the payload.
+  - name: Bounded RPC and ASN.1 behavior regressions
+    runs: |
+      bash tests/run-resource-regressions.sh . src
+
   # Upstream test suite, run after install (F-086 contamination standard)
   # so nothing it rebuilds or relinks can be shipped. Serial, as the inline
   # step ran it: the k5test Python suites start KDCs and kadmind on fixed
