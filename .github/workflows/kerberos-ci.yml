@@ -54,11 +54,14 @@ jobs:
         env:
           COSIGN: ${{ runner.temp }}/kerberos-tools/cosign
         run: bash .pnp-kerberos/build.sh --arch ${{ matrix.arch }} --recipe krb5.yaml --output .pnp-kerberos/out/${{ matrix.arch }} --inputs-lock .pnp-kerberos/tools.lock.json --discover-inputs
+      - name: Stage readable public diagnostics without the root-owned cache
+        if: always()
+        run: bash .pnp-kerberos/collect-diagnostics.sh .pnp-kerberos/out/${{ matrix.arch }}
       - name: Retain scoped diagnostic outputs even when a prerequisite fails
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: kerberos-diagnostic-${{ matrix.arch }}
-          path: .pnp-kerberos/out/${{ matrix.arch }}/
+          path: .pnp-kerberos/out/${{ matrix.arch }}/publish/
           if-no-files-found: error
           retention-days: 14

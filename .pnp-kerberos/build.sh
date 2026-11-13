@@ -35,8 +35,9 @@ if ! $discovery; then
   echo 'REFUSED: captured-input replay must be implemented before acceptance' >&2
   exit 1
 fi
-timeout 110m docker run --name "$container" --privileged --cpus=2 --memory=8g --pids-limit=2048 \
+timeout 110m docker run --name "$container" --hostname localhost --privileged --cpus=2 --memory=8g --pids-limit=2048 \
   --mount "type=bind,source=$root,target=/work" --workdir /work \
+  --env HOST_UID="$(id -u)" --env HOST_GID="$(id -g)" \
   --env APK_ARCH="$arch" --env OUTPUT_DIR="$output" --env BUILD_MODE="$sdk_mode" \
   --entrypoint /bin/bash "$sdk" -euo pipefail -c '
     test "$(uname -m)" = "$APK_ARCH"
@@ -45,7 +46,18 @@ timeout 110m docker run --name "$container" --privileged --cpus=2 --memory=8g --
     git config --global --add safe.directory /work
     bwrap --unshare-user --bind / / true
     mkdir -p "/work/$OUTPUT_DIR/sdk-keys" /tmp/kerberos-build-keys
-    trap "rm -f /tmp/kerberos-build-keys/*" EXIT
+    collect_on_exit() {
+      status=$?
+      rm -f /tmp/kerberos-build-keys/*
+      ( bash /work/.pnp-kerberos/collect-diagnostics.sh "/work/$OUTPUT_DIR" /tmp/kerberos-workspace &&
+        chown -R "$HOST_UID:$HOST_GID" "/work/$OUTPUT_DIR/publish" ) || {
+        echo "ERROR: failed to retain diagnostic outputs" >&2
+        test "$status" -ne 0 || status=1
+      }
+      exit "$status"
+    }
+    trap collect_on_exit EXIT
+    printf "SDK hostname: %s\n" "$(hostname)"
     cp /lib/apk/db/installed "/work/$OUTPUT_DIR/sdk-apk-installed.txt"
     cp /etc/apk/keys/* "/work/$OUTPUT_DIR/sdk-keys/"
     sha256sum "$(command -v melange)" "$(command -v bwrap)" > "/work/$OUTPUT_DIR/tool-sha256.txt"
@@ -54,7 +66,7 @@ timeout 110m docker run --name "$container" --privileged --cpus=2 --memory=8g --
     cp /tmp/kerberos-build-keys/local.rsa.pub "/work/$OUTPUT_DIR/diagnostic-key.rsa.pub"
     make MELANGE_RUNNER=bubblewrap ARCH="$APK_ARCH" KEY=/tmp/kerberos-build-keys/local.rsa \
       MELANGE_TMPDIR="/work/$OUTPUT_DIR/cache" \
-      MELANGE_EXTRA_OPTS="--source-package --dependency-log=/work/$OUTPUT_DIR/dependencies.log --create-build-log --persist-lint-results" \
+      MELANGE_EXTRA_OPTS="--cleanup=false --workspace-dir=/tmp/kerberos-workspace --source-package --dependency-log=/work/$OUTPUT_DIR/dependencies.log --create-build-log --persist-lint-results" \
       package/krb5
     make MELANGE_RUNNER=bubblewrap ARCH="$APK_ARCH" KEY=/tmp/kerberos-build-keys/local.rsa \
       MELANGE_TMPDIR="/work/$OUTPUT_DIR/cache" test/krb5
