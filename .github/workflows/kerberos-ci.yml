@@ -1,0 +1,64 @@
+name: Kerberos package verification
+on:
+  pull_request:
+  push:
+    branches: ['pnp/krb5-1.22.3']
+permissions:
+  contents: read
+concurrency:
+  group: kerberos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  boundary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s .pnp-kerberos/tests -v
+  baseline-build:
+    needs: boundary
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            cosign_arch: amd64
+            cosign_sha256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            cosign_arch: arm64
+            cosign_sha256: ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Record public runner and install checksum-pinned verifier
+        env:
+          COSIGN_ARCH: ${{ matrix.cosign_arch }}
+          COSIGN_SHA256: ${{ matrix.cosign_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/kerberos-tools" .pnp-kerberos/out/${{ matrix.arch }}
+          uname -a > .pnp-kerberos/out/${{ matrix.arch }}/runner.txt
+          docker version >> .pnp-kerberos/out/${{ matrix.arch }}/runner.txt
+          printf '%s %s\n' "$ImageOS" "$ImageVersion" >> .pnp-kerberos/out/${{ matrix.arch }}/runner.txt
+          curl --fail --location --retry 2 --output "$RUNNER_TEMP/kerberos-tools/cosign" "https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign-linux-$COSIGN_ARCH"
+          printf '%s  %s\n' "$COSIGN_SHA256" "$RUNNER_TEMP/kerberos-tools/cosign" | sha256sum --check --strict
+          chmod 755 "$RUNNER_TEMP/kerberos-tools/cosign"
+      - name: Build public unchanged recipe and execute declared suites
+        env:
+          COSIGN: ${{ runner.temp }}/kerberos-tools/cosign
+        run: bash .pnp-kerberos/build.sh --arch ${{ matrix.arch }} --recipe krb5.yaml --output .pnp-kerberos/out/${{ matrix.arch }} --inputs-lock .pnp-kerberos/tools.lock.json --discover-inputs
+      - name: Retain scoped diagnostic outputs even when a prerequisite fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kerberos-diagnostic-${{ matrix.arch }}
+          path: .pnp-kerberos/out/${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 14

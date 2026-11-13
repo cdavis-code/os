@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "upstream_base": "c84b5e5b04c806831acca635e55479c38f741c78",
+  "source": {
+    "repository": "https://github.com/krb5/krb5.git",
+    "commit": "8570e77819563e036027e1da789d08ec9333ed4d"
+  },
+  "sdk": "ghcr.io/wolfi-dev/sdk@sha256:5637faa2c4c4b402f392cf49dcbc161a392a91a5cea69ce0edf0f998f2e88b59",
+  "runner": "bubblewrap",
+  "repositories": ["https://apk.cgr.dev/chainguard"],
+  "captured_inputs": {}
+}
